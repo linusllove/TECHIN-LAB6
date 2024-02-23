@@ -1,64 +1,54 @@
-from tempfile import NamedTemporaryFile
 import os
-
 import streamlit as st
-from llama_index.core import VectorStoreIndex
-from llama_index.llms.openai import OpenAI
-from llama_index.readers.file import PDFReader
+import fitz  # PyMuPDF
+import openai
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
+# Retrieve API key from environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Streamlit page configuration
 st.set_page_config(
-    page_title="Chat with the PDF",
-    page_icon="🦙",
+    page_title="ElioChat",
+    page_icon="🚀",
     layout="centered",
-    initial_sidebar_state="auto",
-    menu_items=None,
+    initial_sidebar_state="auto"
 )
 
-if "messages" not in st.session_state.keys():  # Initialize the chat messages history
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Ask me a question about your document!"}
-    ]
+openai.api_key = OPENAI_API_KEY
 
-uploaded_file = st.file_uploader("Upload a file")
+def read_pdf(file):
+    """Read and extract text from uploaded PDF file."""
+    text = ""
+    with fitz.open(stream=file) as doc:
+        for page in doc:
+            text += page.get_text()
+    return text
+
+def generate_activities_report(text):
+    """Generate a report on activities for kids from the text using OpenAI."""
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt="Generate a report on activities for kids mentioned in the text: \n" + text,
+        temperature=0.5,
+        max_tokens=1024,
+        top_p=1.0,
+        frequency_penalty=0.0,
+        presence_penalty=0.0
+    )
+    return response.choices[0].text.strip()
+
+# File uploader widget
+uploaded_file = st.file_uploader("Upload a file", type=["pdf"])
 if uploaded_file:
-    bytes_data = uploaded_file.read()
-    with NamedTemporaryFile(delete=False) as tmp:  # open a named temporary file
-        tmp.write(bytes_data)  # write data from the uploaded file into it
-        with st.spinner(
-            text="Loading and indexing the Streamlit docs – hang tight! This should take 1-2 minutes."
-        ):
-            reader = PDFReader()
-            docs = reader.load_data(tmp.name)
-            llm = OpenAI(
-                model="gpt-3.5-turbo",
-                temperature=0.0,
-                system_prompt="You are an expert on the content of the document, provide detailed answers to the questions. Use the document to support your answers.",
-            )
-            index = VectorStoreIndex.from_documents(docs)
-    os.remove(tmp.name)  # remove temp file
+    with st.spinner("Reading and analyzing the document..."):
+        text = read_pdf(uploaded_file)
+        report = generate_activities_report(text)
+        st.subheader("Activities Analysis Report")
+        st.write(report)
 
-    if "chat_engine" not in st.session_state.keys():  # Initialize the chat engine
-        st.session_state.chat_engine = index.as_chat_engine(
-            chat_mode="condense_question", verbose=False, llm=llm
-        )
-
-if prompt := st.chat_input(
-    "Your question"
-):  # Prompt for user input and save to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-for message in st.session_state.messages:  # Display the prior chat messages
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-
-# If last message is not from assistant, generate a new response
-if st.session_state.messages[-1]["role"] != "assistant":
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = st.session_state.chat_engine.stream_chat(prompt)
-            st.write_stream(response.response_gen)
-            message = {"role": "assistant", "content": response.response}
-            st.session_state.messages.append(message)  # Add response to message history
+# Instructions
+st.write("Upload a PDF document containing information about activities for kids to generate an activities analysis report.")
