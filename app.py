@@ -1,54 +1,30 @@
-from tempfile import NamedTemporaryFile
-import os
-import re
-
 import streamlit as st
-from llama_index.readers.file import PDFReader
-from dotenv import load_dotenv
-
-load_dotenv()
-
-st.set_page_config(
-    page_title="Classify Kids' Activities",
-    page_icon="🦙",
-    layout="centered",
-    initial_sidebar_state="auto",
-    menu_items=None,
-)
+import fitz  # PyMuPDF library
 
 def classify_activities(docs):
-    categories = {
-        "Outdoor": ["park", "hiking", "beach"],
-        "Educational": ["museum", "library", "reading"],
-        "Sports": ["soccer", "basketball", "swimming"],
-        "Arts & Crafts": ["painting", "drawing", "crafts"],
-    }
-    results = {}
+    keywords = ["football", "basketball", "soccer", "baseball", "tennis"]
+    classification_results = []
+
     for doc in docs:
-        for category, keywords in categories.items():
-            if any(keyword in doc.lower() for keyword in keywords):
-                results.setdefault(category, []).append(doc)
-    return results
+        text = ""
+        for page in doc:
+            text += page.get_text()
 
-if "classification_results" not in st.session_state.keys():  # Initialize the classification results
-    st.session_state.classification_results = {}
+        text = text.lower()  # Convert text to lowercase
+        if any(keyword in text for keyword in keywords):
+            classification_results.append("Sport")
+        else:
+            classification_results.append("Non-Sport")
 
-uploaded_file = st.file_uploader("Upload a document file")
-if uploaded_file:
-    bytes_data = uploaded_file.read()
-    with NamedTemporaryFile(delete=False) as tmp:  # Open a named temporary file
-        tmp.write(bytes_data)  # Write data from the uploaded file into it
-        with st.spinner("Extracting and classifying activities from your document..."):
-            reader = PDFReader()
-            docs = reader.load_data(tmp.name)
-            st.session_state.classification_results = classify_activities(docs)
-    os.remove(tmp.name)  # Remove temp file
+    return classification_results
 
-if st.session_state.classification_results:
-    for category, activities in st.session_state.classification_results.items():
-        st.subheader(category)
-        for activity in activities:
-            st.write("- ", activity)
-else:
-    st.write("Upload a document to classify kids' activities.")
+st.title("Activity Classification")
 
+uploaded_files = st.file_uploader("Upload PDF files", accept_multiple_files=True, type=["pdf"])
+
+if uploaded_files:
+    docs = [fitz.open(pdf) for pdf in uploaded_files]
+    st.session_state.classification_results = classify_activities(docs)
+
+    for doc, result in zip(uploaded_files, st.session_state.classification_results):
+        st.write(f"{doc.name}: {result}")
